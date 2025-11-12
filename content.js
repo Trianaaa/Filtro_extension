@@ -33,6 +33,7 @@
     },
     debounceTimer: null,
     globalListenersReady: false,
+    isApplyingFilters: false, // Flag para evitar bucles infinitos
   };
 
   function init() {
@@ -52,7 +53,12 @@
     ensureOpenButton();
     ensurePanel();
     ensureObservers();
-    applyFilters();
+    // Aplicar filtros después de que el panel esté completamente inicializado
+    setTimeout(() => {
+      if (state.isActive && state.panel && state.controls.searchCampaign) {
+        applyFilters();
+      }
+    }, 200);
   }
 
   function deactivate() {
@@ -132,8 +138,8 @@
             <input id="mfcSearchCampaign" class="mfc-input" type="text" placeholder="Nombre o código de campaña">
           </div>
           <div class="mfc-field">
-            <label class="mfc-field__label" for="mfcSearchMacro">Macro / tarea</label>
-            <input id="mfcSearchMacro" class="mfc-input" type="text" placeholder="Texto u ID de macro">
+            <label class="mfc-field__label" for="mfcSearchMacro">Macros</label>
+            <input id="mfcSearchMacro" class="mfc-input" type="text" placeholder="Número o nombre de macro">
           </div>
           <div class="mfc-field">
             <label class="mfc-field__label" for="mfcSearchKeyword">Palabra clave en filas</label>
@@ -164,7 +170,7 @@
           </div>
         </section>
         <footer class="mfc-footer">
-          <button type="button" id="mfcResetButton" class="mfc-button">Limpiar filtros</button>
+          <button type="button" id="mfcResetButton" class="mfc-button"><span>Limpiar filtros</span></button>
         </footer>
       </div>
     `;
@@ -173,11 +179,28 @@
     state.panel = panel;
     state.isMounted = true;
 
+    // Cachear controles inmediatamente
     cacheControls();
-    buildSeverityChips();
-    attachControlListeners();
-    restoreState();
-    restoreOpenState();
+    
+    // Verificar que los controles se encontraron
+    if (!state.controls.searchCampaign) {
+      console.error("[Filtro Campañas] Error: No se encontraron los controles del panel");
+      // Intentar nuevamente después de un pequeño delay
+      setTimeout(() => {
+        cacheControls();
+        if (state.controls.searchCampaign) {
+          buildSeverityChips();
+          attachControlListeners();
+          restoreState();
+          restoreOpenState();
+        }
+      }, 100);
+    } else {
+      buildSeverityChips();
+      attachControlListeners();
+      restoreState();
+      restoreOpenState();
+    }
   }
 
   function cacheControls() {
@@ -215,7 +238,7 @@
       btn.type = "button";
       btn.className = `mfc-chip mfc-chip--${option.accent}`;
       btn.dataset.key = option.key;
-      btn.innerHTML = `<span class="mfc-chip__dot"></span>${option.label}`;
+      btn.innerHTML = `<span class="mfc-chip__dot"></span><span>${option.label}</span>`;
       btn.addEventListener("click", () => toggleSeverity(option.key));
       container.appendChild(btn);
       state.severityButtons.set(option.key, btn);
@@ -224,27 +247,70 @@
 
   function attachControlListeners() {
     const { searchCampaign, searchMacro, searchKeyword, searchIMEI, onlyFallen, lastEventRange, resetButton, closeButton } = state.controls;
-    if (!searchCampaign) return;
+    if (!searchCampaign || !state.isActive) {
+      console.warn("[Filtro Campañas] No se pueden adjuntar listeners: controles no disponibles");
+      return;
+    }
 
-    [searchCampaign, searchMacro, searchKeyword].forEach((input) => {
-      input.addEventListener("input", () => scheduleFilters());
-    });
+    try {
+      // Inputs de búsqueda
+      if (searchCampaign) {
+        searchCampaign.addEventListener("input", () => {
+          scheduleFilters();
+        }, { passive: true });
+      }
 
-    searchIMEI.addEventListener("input", () => {
-      const sanitized = searchIMEI.value.replace(/\D/g, "");
-      searchIMEI.value = sanitized.slice(0, 15);
-      scheduleFilters();
-    });
+      if (searchMacro) {
+        searchMacro.addEventListener("input", () => {
+          scheduleFilters();
+        }, { passive: true });
+      }
 
-    onlyFallen.addEventListener("change", () => scheduleFilters());
+      if (searchKeyword) {
+        searchKeyword.addEventListener("input", () => {
+          scheduleFilters();
+        }, { passive: true });
+      }
 
-    lastEventRange.addEventListener("input", () => {
-      updateRangeLabel();
-    });
-    lastEventRange.addEventListener("change", () => scheduleFilters());
+      if (searchIMEI) {
+        searchIMEI.addEventListener("input", () => {
+          const sanitized = searchIMEI.value.replace(/\D/g, "");
+          searchIMEI.value = sanitized.slice(0, 15);
+          scheduleFilters();
+        }, { passive: true });
+      }
 
-    resetButton.addEventListener("click", resetFilters);
-    closeButton.addEventListener("click", closePanel);
+      if (onlyFallen) {
+        onlyFallen.addEventListener("change", () => {
+          scheduleFilters();
+        }, { passive: true });
+      }
+
+      if (lastEventRange) {
+        lastEventRange.addEventListener("input", () => {
+          updateRangeLabel();
+        }, { passive: true });
+        lastEventRange.addEventListener("change", () => {
+          scheduleFilters();
+        }, { passive: true });
+      }
+
+      if (resetButton) {
+        resetButton.addEventListener("click", (e) => {
+          e.preventDefault();
+          resetFilters();
+        });
+      }
+      
+      if (closeButton) {
+        closeButton.addEventListener("click", (e) => {
+          e.preventDefault();
+          closePanel();
+        });
+      }
+    } catch (error) {
+      console.error("[Filtro Campañas] Error adjuntando listeners:", error);
+    }
   }
 
   function toggleSeverity(key) {
@@ -282,7 +348,7 @@
   }
 
   function scheduleFilters(options = {}) {
-    if (!state.isActive) return;
+    if (!state.isActive || !state.panel) return;
     if (state.debounceTimer) {
       clearTimeout(state.debounceTimer);
       state.debounceTimer = null;
@@ -290,22 +356,66 @@
     const delay = options.immediate ? 0 : 150;
     state.debounceTimer = setTimeout(() => {
       state.debounceTimer = null;
-      applyFilters();
+      if (state.isActive && state.panel) {
+        applyFilters();
+      }
     }, delay);
   }
 
   function ensureObservers() {
     if (!state.observers.dom) {
-      state.observers.dom = new MutationObserver(() => {
-        if (!state.isActive) return;
+      state.observers.dom = new MutationObserver((mutations) => {
+        // No hacer nada si estamos aplicando filtros para evitar bucles
+        if (state.isApplyingFilters) return;
+        if (!state.isActive || !state.panel) return;
         if (state.modoDetalleActivo || isDetalleVisible()) return;
+        
+        // Solo reaccionar a cambios relevantes, ignorar cambios en el panel mismo
+        const hasRelevantChanges = mutations.some((mutation) => {
+          if (!mutation.target) return false;
+          // Ignorar cambios dentro del panel
+          if (mutation.target.closest && mutation.target.closest(".mfc-panel")) return false;
+          // Ignorar cambios en modales/popups
+          if (mutation.target.closest && mutation.target.closest(".modal, .popup, .detalle")) return false;
+          // Ignorar cambios que sean solo de atributos de estilo (display, etc.)
+          if (mutation.type === "attributes" && mutation.attributeName === "style") return false;
+          // Solo procesar si hay nodos agregados que sean tablas o contengan tablas
+          if (mutation.addedNodes && mutation.addedNodes.length > 0) {
+            return Array.from(mutation.addedNodes).some((node) => {
+              if (node.nodeType !== 1) return false; // Solo elementos
+              if (node.tagName === "TABLE") return true;
+              if (node.querySelector && node.querySelector("table")) return true;
+              // Verificar si es un contenedor que podría tener tablas
+              if (node.classList && node.classList.length > 0) {
+                // Permitir que se procese si parece ser un contenedor de contenido
+                return true;
+              }
+              return false;
+            });
+          }
+          return false;
+        });
+        
+        if (!hasRelevantChanges) return;
+        
         if (state.debounceTimer) clearTimeout(state.debounceTimer);
         state.debounceTimer = setTimeout(() => {
           state.debounceTimer = null;
-          applyFilters();
-        }, 200);
+          if (state.isActive && state.panel && !state.isApplyingFilters) {
+            applyFilters();
+          }
+        }, 500); // Aumentar el delay para evitar ejecuciones muy frecuentes
       });
-      state.observers.dom.observe(document.body, { childList: true, subtree: true });
+      // Observar solo cambios en childList, no en atributos para mejor rendimiento
+      state.observers.dom.observe(document.body, { 
+        childList: true, 
+        subtree: true,
+        // No observar cambios en atributos para evitar bucles infinitos
+        attributes: false,
+        characterData: false,
+        attributeOldValue: false,
+        characterDataOldValue: false
+      });
     }
 
     if (!state.observers.detalle) {
@@ -315,7 +425,12 @@
           scheduleFilters({ immediate: true });
         }
       });
-      state.observers.detalle.observe(document.body, { childList: true, subtree: true });
+      state.observers.detalle.observe(document.body, { 
+        childList: true, 
+        subtree: true,
+        attributes: false,
+        characterData: false
+      });
     }
   }
 
@@ -331,10 +446,25 @@
   }
 
   function collectFilters() {
-    const normalize = (value) => normalizeText(value || "");
-    const searchCampaign = normalize(state.controls.searchCampaign?.value);
-    const searchMacro = normalize(state.controls.searchMacro?.value);
-    const keyword = normalize(state.controls.searchKeyword?.value);
+    if (!state.controls || !state.isActive) {
+      return {
+        searchCampaign: "",
+        searchMacro: "",
+        keyword: "",
+        imeiKey: "",
+        selectedSeverities: new Set(),
+        onlyFallen: false,
+        minLastEvent: 0,
+      };
+    }
+
+    const normalize = (value) => {
+      const normalized = normalizeText(value || "");
+      return normalized; // Ya está normalizado con trim y espacios
+    };
+    const searchCampaign = normalize(state.controls.searchCampaign?.value || "");
+    const searchMacro = normalize(state.controls.searchMacro?.value || "");
+    const keyword = normalize(state.controls.searchKeyword?.value || "");
 
     const rawIMEI = (state.controls.searchIMEI?.value || "").trim();
     const digits = rawIMEI.replace(/\D/g, "");
@@ -357,94 +487,150 @@
   function applyFilters() {
     if (!state.isActive || !state.panel) return;
     if (state.modoDetalleActivo || isDetalleVisible()) return;
+    if (state.isApplyingFilters) return; // Evitar ejecuciones simultáneas
 
-    const filters = collectFilters();
-    const stats = {
-      campaignsTotal: 0,
-      campaignsVisible: 0,
-      rowsTotal: 0,
-      rowsVisible: 0,
-      criticalVisible: 0,
-      fallenVisible: 0,
-    };
+    // Marcar que estamos aplicando filtros
+    state.isApplyingFilters = true;
 
-    document.querySelectorAll("table").forEach((table) => {
-      if (table.closest(".modal, .popup, .detalle")) return;
+    try {
+      const filters = collectFilters();
+      const stats = {
+        campaignsTotal: 0,
+        campaignsVisible: 0,
+        rowsTotal: 0,
+        rowsVisible: 0,
+        criticalVisible: 0,
+        fallenVisible: 0,
+      };
 
-      const rows = Array.from(table.querySelectorAll("tr")).filter(
-        (row) => row.querySelectorAll("td").length > 0
-      );
-      if (!rows.length) return;
+      const tables = document.querySelectorAll("table");
+      if (!tables.length) {
+        updateSummary(stats);
+        state.isApplyingFilters = false;
+        return;
+      }
 
-      stats.campaignsTotal += 1;
-      stats.rowsTotal += rows.length;
+      tables.forEach((table) => {
+        if (!table || table.closest(".modal, .popup, .detalle, .mfc-panel")) return;
 
-      const campaignBlock = table.closest("div") || table;
-      const h2 = campaignBlock.querySelector ? campaignBlock.querySelector("h2") : null;
-      const campaignName = normalizeText(h2 ? h2.innerText : "");
+        const rows = Array.from(table.querySelectorAll("tr")).filter(
+          (row) => row && row.querySelectorAll("td").length > 0
+        );
+        if (!rows.length) return;
 
-      const matchesCampaign = !filters.searchCampaign || campaignName.includes(filters.searchCampaign);
+        stats.campaignsTotal += 1;
+        stats.rowsTotal += rows.length;
 
-      let visibleRows = 0;
+        const campaignBlock = table.closest("div") || table.parentElement || table;
+        if (!campaignBlock) return;
+        
+        const h2 = campaignBlock.querySelector ? campaignBlock.querySelector("h2") : null;
+        const campaignName = normalizeText(h2 ? h2.innerText || h2.textContent : "");
+        
+        // Obtener el texto completo del bloque de campaña para buscar macros
+        const campaignBlockText = normalizeText(campaignBlock.innerText || campaignBlock.textContent || "");
+        
+        // Buscar enlaces de macros en el bloque de campaña
+        // Buscar todos los enlaces que podrían ser macros (incluyendo los de la tabla)
+        const macroAnchors = campaignBlock.querySelectorAll ? 
+          Array.from(campaignBlock.querySelectorAll("a")) : [];
 
-      rows.forEach((row) => {
-        const { color, caido, ultimoEventoMin, metricCell, lastEventCell } = updateRowMetadata(row);
+        const matchesCampaign = !filters.searchCampaign || campaignName.includes(filters.searchCampaign);
 
-        row.querySelectorAll("td").forEach((td) => {
-          td.classList.remove("resaltar-rojo", "resaltar-naranja", "resaltar-caido", "resaltar-verde");
+        let visibleRows = 0;
+
+        rows.forEach((row) => {
+          if (!row) return;
+          
+          const { color, caido, ultimoEventoMin, metricCell, lastEventCell } = updateRowMetadata(row);
+
+          const tds = row.querySelectorAll("td");
+          tds.forEach((td) => {
+            if (td) {
+              td.classList.remove("resaltar-rojo", "resaltar-naranja", "resaltar-caido", "resaltar-verde");
+            }
+          });
+
+          if (!matchesCampaign) {
+            row.style.display = "none";
+            return;
+          }
+
+          const matchesSeverity =
+            !filters.selectedSeverities.size || filters.selectedSeverities.has(color || "none");
+          const matchesCaidos = !filters.onlyFallen || caido;
+          const matchesLastEvent =
+            filters.minLastEvent <= 0 || (ultimoEventoMin >= filters.minLastEvent && ultimoEventoMin !== -1);
+          
+          // Verificar si la macro coincide (el término ya está normalizado en collectFilters)
+          // Buscar en los enlaces de macros del bloque de campaña Y en las filas
+          const matchesMacro = !filters.searchMacro || 
+            macroAnchors.some((a) => {
+              const txt = normalizeText(a.innerText || "");
+              const hrefOrOnclick = normalizeText(
+                a.getAttribute("href") || a.getAttribute("onclick") || ""
+              );
+              return txt.includes(filters.searchMacro) || hrefOrOnclick.includes(filters.searchMacro);
+            }) ||
+            campaignBlockText.includes(filters.searchMacro) ||
+            rowMatchesMacro(row, filters.searchMacro);
+            
+          const matchesKeyword =
+            !filters.keyword || normalizeText(row.innerText || row.textContent || "").includes(filters.keyword);
+          const matchesIMEI =
+            !filters.imeiKey || rowMatchesIMEI(row, filters.imeiKey);
+
+          const showRow =
+            matchesSeverity &&
+            matchesCaidos &&
+            matchesLastEvent &&
+            matchesMacro &&
+            matchesKeyword &&
+            matchesIMEI;
+
+          if (showRow) {
+            row.style.display = "";
+            visibleRows += 1;
+            stats.rowsVisible += 1;
+            if (color === "red") stats.criticalVisible += 1;
+            if (caido) stats.fallenVisible += 1;
+
+            // Aplicar resaltados directamente a las celdas
+            if (color === "red" && metricCell) {
+              metricCell.classList.add("resaltar-rojo");
+            }
+            if (color === "orange" && metricCell) {
+              metricCell.classList.add("resaltar-naranja");
+            }
+            if (color === "green" && metricCell) {
+              metricCell.classList.add("resaltar-verde");
+            }
+            if (caido && lastEventCell) {
+              lastEventCell.classList.add("resaltar-caido");
+            }
+          } else {
+            row.style.display = "none";
+          }
         });
 
-        if (!matchesCampaign) {
-          row.style.display = "none";
-          return;
+        const showCampaign = matchesCampaign && visibleRows > 0;
+        if (campaignBlock.style) {
+          campaignBlock.style.display = showCampaign ? "" : "none";
         }
-
-        const matchesSeverity =
-          !filters.selectedSeverities.size || filters.selectedSeverities.has(color || "none");
-        const matchesCaidos = !filters.onlyFallen || caido;
-        const matchesLastEvent =
-          filters.minLastEvent <= 0 || (ultimoEventoMin >= filters.minLastEvent && ultimoEventoMin !== -1);
-        const matchesMacro =
-          !filters.searchMacro || rowMatchesMacro(row, filters.searchMacro);
-        const matchesKeyword =
-          !filters.keyword || normalizeText(row.innerText).includes(filters.keyword);
-        const matchesIMEI =
-          !filters.imeiKey || rowMatchesIMEI(row, filters.imeiKey);
-
-        const showRow =
-          matchesSeverity &&
-          matchesCaidos &&
-          matchesLastEvent &&
-          matchesMacro &&
-          matchesKeyword &&
-          matchesIMEI;
-
-        if (showRow) {
-          row.style.display = "";
-          visibleRows += 1;
-          stats.rowsVisible += 1;
-          if (color === "red") stats.criticalVisible += 1;
-          if (caido) stats.fallenVisible += 1;
-
-          if (color === "red" && metricCell) metricCell.classList.add("resaltar-rojo");
-          if (color === "orange" && metricCell) metricCell.classList.add("resaltar-naranja");
-          if (color === "green" && metricCell) metricCell.classList.add("resaltar-verde");
-          if (caido && lastEventCell) lastEventCell.classList.add("resaltar-caido");
-        } else {
-          row.style.display = "none";
+        if (showCampaign) {
+          stats.campaignsVisible += 1;
         }
       });
 
-      const showCampaign = matchesCampaign && visibleRows > 0;
-      campaignBlock.style.display = showCampaign ? "" : "none";
-      if (showCampaign) {
-        stats.campaignsVisible += 1;
-      }
-    });
-
-    updateSummary(stats);
-    guardarEstado();
-    restaurarScroll();
+      updateSummary(stats);
+      guardarEstado();
+      // No restaurar scroll automáticamente - permite al usuario hacer scroll libremente
+    } catch (error) {
+      console.error("[Filtro Campañas] Error aplicando filtros:", error);
+    } finally {
+      // Siempre desmarcar el flag, incluso si hay un error
+      state.isApplyingFilters = false;
+    }
   }
 
   function updateRowMetadata(row) {
@@ -463,7 +649,73 @@
     }
 
     const metricCell = tds[tds.length - 2] || null;
-    const lastEventCell = tds.length >= 5 ? tds[4] : null;
+    
+    // Buscar la celda de último evento de manera más robusta
+    // Primero intentar el índice fijo (más común: índice 4)
+    let lastEventCell = tds.length >= 5 ? tds[4] : null;
+    
+    // Verificar si la celda encontrada tiene contenido válido de tiempo
+    const isValidTimeCell = (cell) => {
+      if (!cell || !cell.innerText) return false;
+      const text = cell.innerText.trim().toUpperCase();
+      if (!text) return false;
+      // Buscar patrones de tiempo como "45 M", "1 H", "0 D 1 H 45 M", etc.
+      // O simplemente números que podrían ser minutos
+      return text.match(/\d+\s*[DHM]/) !== null || 
+             text.match(/\d+\s*(D|H|M)/) !== null ||
+             (text.match(/^\d+$/) !== null && parseInt(text, 10) < 10000);
+    };
+    
+    // Si no se encontró una celda válida en el índice 4, buscar en todas las celdas
+    if (!isValidTimeCell(lastEventCell)) {
+      // Buscar en todas las celdas por contenido de tiempo (incluyendo todas las posiciones)
+      let bestMatch = null;
+      let bestParsedTime = -1;
+      
+      for (let i = 0; i < tds.length; i++) {
+        // Saltar la celda de métrica (penúltima)
+        if (i === tds.length - 2) continue;
+        
+        const cell = tds[i];
+        if (!cell || !cell.innerText) continue;
+        
+        // Intentar parsear el tiempo de esta celda
+        const parsedTime = parseTiempoToMinutos(cell.innerText);
+        if (parsedTime >= 0) {
+          // Si encontramos un tiempo válido, usar esta celda
+          // Preferir celdas que tengan formato de tiempo explícito (D, H, M)
+          const cellText = cell.innerText.trim().toUpperCase();
+          const hasTimeFormat = cellText.match(/\d+\s*[DHM]/) !== null;
+          
+          if (!bestMatch || (hasTimeFormat && bestParsedTime < parsedTime)) {
+            bestMatch = cell;
+            bestParsedTime = parsedTime;
+          }
+        }
+      }
+      
+      if (bestMatch) {
+        lastEventCell = bestMatch;
+      }
+    }
+    
+    // Si aún no se encontró, intentar las últimas columnas (excluyendo la métrica)
+    if (!lastEventCell || !lastEventCell.innerText || !lastEventCell.innerText.trim()) {
+      // Buscar en las últimas 3 columnas (excepto la métrica)
+      for (let i = Math.max(0, tds.length - 4); i < tds.length; i++) {
+        if (i === tds.length - 2) continue; // Saltar la celda de métrica
+        const cell = tds[i];
+        if (cell && cell.innerText && cell.innerText.trim()) {
+          // Si la celda tiene contenido, intentar usarla
+          const parsedTime = parseTiempoToMinutos(cell.innerText);
+          // Incluso si no se puede parsear, si tiene contenido y está en las últimas columnas, podría ser la celda de tiempo
+          if (parsedTime >= 0 || (i >= tds.length - 3 && cell.innerText.trim())) {
+            lastEventCell = cell;
+            break;
+          }
+        }
+      }
+    }
 
     let color = "none";
     if (metricCell) {
@@ -483,12 +735,82 @@
       }
     }
 
-    const repCell = tds[3];
+    // Buscar la celda de repetición de manera más robusta
+    let repCell = tds[3] || null;
+    // Si no se encontró en el índice 3, buscar en todas las celdas
+    if (!repCell || !repCell.innerText || !repCell.innerText.trim()) {
+      for (let i = 0; i < Math.min(tds.length, 5); i++) {
+        const cell = tds[i];
+        if (cell && cell.innerText && cell.innerText.match(/^\d+$/)) {
+          repCell = cell;
+          break;
+        }
+      }
+    }
+    
     const repMatch = repCell ? String(repCell.innerText || "").match(/\d+/) : null;
     const repetition = repMatch ? parseInt(repMatch[0], 10) : 1;
-    const ultimoEventoMin = parseTiempoToMinutos(lastEventCell ? lastEventCell.innerText : "");
+    
+    // Intentar parsear el tiempo de la celda de último evento
+    let ultimoEventoMin = -1;
+    if (lastEventCell && lastEventCell.innerText) {
+      const cellText = lastEventCell.innerText.trim();
+      ultimoEventoMin = parseTiempoToMinutos(cellText);
+      
+      // Si no se pudo parsear, intentar parsear de nuevo limpiando el texto
+      // Esto ayuda con formatos como "0 D - 0 H - 6 M" que tienen guiones
+      if (ultimoEventoMin === -1 && cellText) {
+        // Limpiar el texto: remover guiones y espacios extra, pero mantener D, H, M
+        const cleanedText = cellText.replace(/\s*-\s*/g, " ").replace(/\s+/g, " ").trim();
+        ultimoEventoMin = parseTiempoToMinutos(cleanedText);
+      }
+      
+      // Si aún no se pudo parsear, buscar cualquier patrón de tiempo en todas las celdas
+      if (ultimoEventoMin === -1) {
+        for (let i = 0; i < tds.length; i++) {
+          if (i === tds.length - 2) continue; // Saltar la celda de métrica
+          const cell = tds[i];
+          if (cell && cell.innerText) {
+            const testText = cell.innerText.trim();
+            const testTime = parseTiempoToMinutos(testText);
+            if (testTime >= 0) {
+              ultimoEventoMin = testTime;
+              lastEventCell = cell; // Actualizar la celda de último evento
+              break;
+            }
+          }
+        }
+      }
+    }
+    
     const threshold = getThresholdMinutes(repetition);
-    const caido = ultimoEventoMin !== -1 && ultimoEventoMin >= threshold;
+    
+    // Determinar si está caído
+    // REGLA PRINCIPAL: Si lleva más de 30 minutos sin medir, se considera caído
+    // Esto es independiente del threshold basado en la repetición
+    let caido = false;
+    
+    if (ultimoEventoMin !== -1) {
+      // Si se puede parsear el tiempo, verificar si es >= 30 minutos
+      if (ultimoEventoMin >= 30) {
+        caido = true;
+      }
+      // También verificar si supera el threshold tradicional (por compatibilidad)
+      else if (ultimoEventoMin >= threshold) {
+        caido = true;
+      }
+    }
+    // Si no se pudo parsear el tiempo pero hay indicadores claros de error/caído:
+    else if (lastEventCell) {
+      const cellText = lastEventCell.innerText ? lastEventCell.innerText.trim() : "";
+      if (cellText && (color === "red" || cellText.toLowerCase().includes("error") || cellText.toLowerCase().includes("caido"))) {
+        // Si hay indicadores de error pero no se pudo parsear el tiempo,
+        // considerar como potencialmente caído si el color es rojo
+        if (color === "red") {
+          caido = true;
+        }
+      }
+    }
 
     row.dataset.color = color;
     row.dataset.caido = caido ? "true" : "false";
@@ -526,21 +848,25 @@
   }
 
   function restoreState() {
-    if (!state.controls.searchCampaign) return;
+    if (!state.controls.searchCampaign || !state.isActive) return;
     try {
       const raw = sessionStorage.getItem(STORAGE_KEYS.filters);
       if (!raw) {
-        updateRangeLabel();
-        applyFilters();
+        if (state.controls.lastEventRange && state.controls.lastEventLabel) {
+          updateRangeLabel();
+        }
+        if (state.isActive && state.panel) {
+          applyFilters();
+        }
         return;
       }
       const data = JSON.parse(raw);
-      state.controls.searchCampaign.value = data.searchCamp || "";
-      state.controls.searchMacro.value = data.searchMacro || "";
-      state.controls.searchKeyword.value = data.searchKeyword || "";
-      state.controls.searchIMEI.value = data.searchIMEI || "";
-      state.controls.onlyFallen.checked = Boolean(data.onlyFallen);
-      state.controls.lastEventRange.value = String(data.lastEvent || 0);
+      if (state.controls.searchCampaign) state.controls.searchCampaign.value = data.searchCamp || "";
+      if (state.controls.searchMacro) state.controls.searchMacro.value = data.searchMacro || "";
+      if (state.controls.searchKeyword) state.controls.searchKeyword.value = data.searchKeyword || "";
+      if (state.controls.searchIMEI) state.controls.searchIMEI.value = data.searchIMEI || "";
+      if (state.controls.onlyFallen) state.controls.onlyFallen.checked = Boolean(data.onlyFallen);
+      if (state.controls.lastEventRange) state.controls.lastEventRange.value = String(data.lastEvent || 0);
       updateRangeLabel();
 
       state.severitySelections.clear();
@@ -557,7 +883,9 @@
       state.severitySelections.clear();
       state.severityButtons.forEach((btn) => btn.classList.remove("is-active"));
     }
-    applyFilters();
+    if (state.isActive && state.panel) {
+      applyFilters();
+    }
   }
 
   function restoreOpenState() {
@@ -622,7 +950,7 @@
     state.globalListenersReady = true;
 
     window.addEventListener("beforeunload", handleBeforeUnload);
-    window.addEventListener("load", restaurarScroll);
+    // Removido el listener de 'load' que restauraba scroll para evitar bloqueos
     document.addEventListener("click", handleDocumentClick, true);
     document.addEventListener("keydown", handleKeyDown, true);
   }
@@ -637,16 +965,9 @@
 
   function restaurarScroll() {
     if (state.modoDetalleActivo || isDetalleVisible()) return;
-    try {
-      const raw = sessionStorage.getItem(STORAGE_KEYS.scrollY);
-      const y = parseInt(raw, 10);
-      if (!isNaN(y)) {
-        setTimeout(() => window.scrollTo(0, y), 200);
-        setTimeout(() => window.scrollTo(0, y), 800);
-      }
-    } catch {
-      // ignore
-    }
+    // No restaurar scroll automáticamente para evitar bloqueos
+    // El usuario puede hacer scroll manualmente
+    return;
   }
 
   function handleDocumentClick(event) {
@@ -709,22 +1030,67 @@
   }
 
   function rowMatchesMacro(row, normalizedMacro) {
+    if (!normalizedMacro || !row) {
+      return true;
+    }
+
     const anchors = Array.from(row.querySelectorAll("a"));
+
+    // Buscar en los enlaces (como la versión original)
     if (
       anchors.some((anchor) => {
-        const text = normalizeText(anchor.innerText || "");
+        if (!anchor) return false;
+        
+        const text = normalizeText(anchor.innerText || anchor.textContent || "");
         const href = normalizeText(anchor.getAttribute("href") || "");
-        const onclick = normalizeText(anchor.getAttribute("onclick") || "");
+        const onclick = anchor.getAttribute("onclick") || "";
+        
+        // Normalizar el onclick
+        let normalizedOnclick = normalizeText(onclick);
+        
+        // Si el onclick contiene una URL (como modal('https://...')), extraerla y normalizarla
+        if (onclick) {
+          // Extraer URL de onclick que tenga formato modal('URL') o similar
+          const urlInQuotesPattern = /['"](https?:\/\/[^'"]+)['"]/g;
+          const urlMatches = onclick.match(urlInQuotesPattern);
+          if (urlMatches) {
+            urlMatches.forEach(quotedUrl => {
+              // Remover las comillas y normalizar la URL
+              const cleanUrl = quotedUrl.replace(/['"]/g, "");
+              if (cleanUrl && cleanUrl.startsWith("http")) {
+                const normalizedUrl = normalizeText(cleanUrl);
+                // Agregar la URL normalizada al onclick normalizado para buscar en ella
+                normalizedOnclick += " " + normalizedUrl;
+              }
+            });
+          }
+          
+          // También buscar URLs directamente (sin comillas) en el onclick
+          const directUrlPattern = /(https?:\/\/[^\s'")]+)/gi;
+          const directMatches = onclick.match(directUrlPattern);
+          if (directMatches) {
+            directMatches.forEach(url => {
+              if (url) {
+                const normalizedUrl = normalizeText(url);
+                normalizedOnclick += " " + normalizedUrl;
+              }
+            });
+          }
+        }
+
         return (
           text.includes(normalizedMacro) ||
           href.includes(normalizedMacro) ||
-          onclick.includes(normalizedMacro)
+          normalizedOnclick.includes(normalizedMacro)
         );
       })
     ) {
       return true;
     }
-    return normalizeText(row.innerText || "").includes(normalizedMacro);
+
+    // Si no se encontró en los enlaces, buscar en el texto completo de la fila
+    // Esto incluye nombres de macros que están fuera de los enlaces
+    return normalizeText(row.innerText || row.textContent || "").includes(normalizedMacro);
   }
 
   function rowMatchesIMEI(row, imeiKey) {
@@ -747,26 +1113,72 @@
   }
 
   function normalizeText(str) {
-    return String(str || "")
+    if (!str || typeof str !== "string") return "";
+    return String(str)
+      .trim()
       .toLowerCase()
       .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "");
+      .replace(/[\u0300-\u036f]/g, "") // Eliminar acentos
+      .replace(/[_\-\.,;:]+/g, " ") // Normalizar guiones, guiones bajos y puntuación a espacios
+      .replace(/\s+/g, " ") // Normalizar espacios múltiples a uno solo
+      .trim(); // Eliminar espacios al inicio y al final después de todas las transformaciones
   }
 
   function parseTiempoToMinutos(txt) {
-    const low = String(txt || "").toUpperCase().trim();
+    if (!txt || typeof txt !== "string") return -1;
+    const low = String(txt).toUpperCase().trim();
     if (!low) return -1;
+    
+    // Si contiene "99 D", "99 H", "99 M" (formato de error o desconocido)
     if (low.includes("99 D") && low.includes("99 H") && low.includes("99 M")) return -1;
-    let d = 0,
-      h = 0,
-      m = 0;
+    
+    // Buscar patrones de tiempo más flexibles
+    // El formato puede ser "0 D - 0 H - 6 M" o "0 D 0 H 6 M" o variaciones
+    let d = 0, h = 0, m = 0;
+    
+    // Buscar días: puede ser "1D", "1 D", "1 D -", "1 D -", etc.
+    // El regex busca un número seguido de espacios opcionales y luego "D"
     const md = low.match(/(\d+)\s*D/);
-    const mh = low.match(/(\d+)\s*H/);
-    const mm = low.match(/(\d+)\s*M/);
     if (md) d = parseInt(md[1], 10);
+    
+    // Buscar horas: puede ser "1H", "1 H", "1 H -", "1 H -", etc.
+    // El regex busca un número seguido de espacios opcionales y luego "H"
+    const mh = low.match(/(\d+)\s*H/);
     if (mh) h = parseInt(mh[1], 10);
+    
+    // Buscar minutos: puede ser "45M", "45 M", "45 M", etc.
+    // El regex busca un número seguido de espacios opcionales y luego "M"
+    const mm = low.match(/(\d+)\s*M/);
     if (mm) m = parseInt(mm[1], 10);
-    return d * 1440 + h * 60 + m;
+    
+    // Si no se encontró ningún patrón, intentar buscar solo números
+    // Por ejemplo, si el texto es solo "45", podría ser minutos
+    if (d === 0 && h === 0 && m === 0) {
+      const onlyNumber = low.match(/^\s*(\d+)\s*$/);
+      if (onlyNumber) {
+        // Si es un número pequeño (< 1000), asumir que son minutos
+        const num = parseInt(onlyNumber[1], 10);
+        if (num < 1000) {
+          m = num;
+        }
+      }
+    }
+    
+    // Calcular total en minutos
+    const totalMinutes = d * 1440 + h * 60 + m;
+    
+    // Debug: Si el tiempo parseado es 0 pero el texto no está vacío, podría haber un problema
+    // Pero no retornamos -1 si es 0 válido (0 D 0 H 0 M = 0 minutos)
+    // Solo retornamos -1 si no se pudo parsear nada
+    
+    // Si encontramos al menos un patrón (D, H, o M), retornar el total
+    // Incluso si es 0, es un tiempo válido
+    if (md || mh || mm || (d === 0 && h === 0 && m === 0 && low.match(/\d+/))) {
+      return totalMinutes;
+    }
+    
+    // Si no se encontró ningún tiempo válido, retornar -1
+    return -1;
   }
 
   function getThresholdMinutes(rep) {

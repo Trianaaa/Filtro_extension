@@ -20,9 +20,16 @@ document.addEventListener("DOMContentLoaded", () => {
       ? "La lupa flotante te permite volver a abrir el panel en el sitio."
       : "Enciende la extensión para volver a ver el panel de filtro en el sitio.";
 
-    statusChip.textContent = active ? "Activa" : "Pausada";
-    statusChip.classList.toggle("popup__chip--active", active);
-    statusChip.classList.toggle("popup__chip--inactive", !active);
+    // Actualizar el chip con el icono y texto
+    if (active) {
+      statusChip.innerHTML = `<span><i class="ti ti-check"></i> Activa</span>`;
+      statusChip.classList.add("popup__chip--active");
+      statusChip.classList.remove("popup__chip--inactive");
+    } else {
+      statusChip.innerHTML = `<span>Pausada</span>`;
+      statusChip.classList.remove("popup__chip--active");
+      statusChip.classList.add("popup__chip--inactive");
+    }
   }
 
   function setLoading(loading) {
