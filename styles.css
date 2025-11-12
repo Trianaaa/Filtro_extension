@@ -1,0 +1,188 @@
+/* === RESET/BOX-SIZING === */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+/* === PANEL PRINCIPAL === */
+.menu-filtro-campanias {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 260px;
+  height: 100%;
+  background: linear-gradient(180deg, #ffffff, #f1f1f1);
+  border-right: 1px solid #e6e6e6;
+  z-index: 10000;
+  padding: 16px;
+  box-shadow: 4px 0px 18px rgba(0,0,0,0.12);
+  transition: transform 0.28s ease, box-shadow 0.2s;
+  transform: translateX(0);
+  font-family: "Segoe UI", Tahoma, sans-serif;
+  overflow-y: auto;
+  padding-bottom: 24px;
+}
+
+/* === BOTÓN CERRAR === */
+.menu-filtro-campanias .close {
+  float: right;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  border: none;
+  background-image: url("x.png");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 16px 16px;
+  transition: filter 0.18s ease;
+}
+.menu-filtro-campanias .close:hover,
+.menu-filtro-campanias .close:focus { filter: brightness(0.7); outline: none; }
+
+/* === TÍTULO === */
+.menu-filtro-campanias .titulo {
+  margin: 10px 0 16px 0;
+  color: #222;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* === BUSCADOR === */
+.menu-filtro-campanias .buscador {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d0d7de;
+  border-radius: 20px;
+  margin-bottom: 14px;
+  outline: none;
+  font-size: 14px;
+  transition: border 0.16s ease, box-shadow 0.16s ease;
+  background: #fff;
+}
+.menu-filtro-campanias .buscador:focus {
+  border-color: #007bff;
+  box-shadow: 0 4px 10px rgba(0,123,255,0.12);
+}
+
+/* === SUBTÍTULO FILTROS === */
+.menu-filtro-campanias .filtro-titulo {
+  margin: 8px 0 10px;
+  font-weight: 700;
+  color: #444;
+  font-size: 13px;
+}
+
+/* === WRAPPER PARA CADA FILTRO === */
+.menu-filtro-campanias .filtro-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  transition: background 0.12s;
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+.menu-filtro-campanias .filtro-item:hover { background: #fbfbfb; }
+
+/* === CHECKBOX === */
+.menu-filtro-campanias input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #bdbdbd;
+  border-radius: 4px;
+  display: inline-block;
+  vertical-align: middle;
+  position: relative;
+  background: white;
+  transition: background 0.12s, border-color 0.12s;
+}
+.menu-filtro-campanias input[type="checkbox"]:checked {
+  background: linear-gradient(180deg,#007bff,#0062d6);
+  border-color: #0062d6;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.12) inset;
+}
+.menu-filtro-campanias input[type="checkbox"]:focus {
+  outline: 2px solid rgba(0,123,255,0.2);
+  outline-offset: 2px;
+}
+
+/* Texto de label */
+.menu-filtro-campanias label {
+  cursor: pointer;
+  font-size: 14px;
+  color: #333;
+  margin: 0;
+  display: inline-block;
+  user-select: none;
+}
+
+.label-rojo { color: #b52b2b; font-weight: 600; }
+.label-naranja { color: #b86b12; font-weight: 600; }
+.label-caidos { color: #333; font-weight: 600; }
+
+/* === BOTÓN REINICIAR === */
+.menu-filtro-campanias .reset {
+  display: block;
+  margin-top: 14px;
+  padding: 10px;
+  background: #222;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  width: 100%;
+  transition: background 0.12s, transform 0.08s;
+}
+.menu-filtro-campanias .reset:hover { background: #000; }
+.menu-filtro-campanias .reset:active { transform: translateY(1px); }
+
+/* === BOTÓN ABRIR (LUPA) === */
+#btnAbrirFiltro, .btn-abrir {
+  position: fixed;
+  top: 18px;
+  left: 12px;
+  z-index: 10001;
+  width: 36px;
+  height: 36px;
+  background-image: url("lupa.png");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 20px 20px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+  transition: filter 0.12s;
+}
+#btnAbrirFiltro:hover, .btn-abrir:hover { filter: brightness(0.85); }
+
+/* === RESALTADOS === */
+.resaltar-rojo {
+  background: #ffebeb !important;
+  outline: 2px solid #d9534f !important;
+  border-radius: 6px;
+}
+.resaltar-naranja {
+  background: #fff6eb !important;
+  outline: 2px solid #f0ad4e !important;
+  border-radius: 6px;
+}
+.resaltar-caido {
+  background: #fff0f0 !important;
+  outline: 2px solid #d9534f !important;
+  border-radius: 6px;
+}
+
+/* === MEDIA QUERY === */
+@media (max-width: 520px) {
+  .menu-filtro-campanias { width: 220px; }
+  #btnAbrirFiltro, .btn-abrir { left: 8px; top: 12px; width: 32px; height: 32px; }
+}
+
+/* Scrollbar */
+.menu-filtro-campanias::-webkit-scrollbar { width: 8px; }
+.menu-filtro-campanias::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.08); border-radius: 8px; }
