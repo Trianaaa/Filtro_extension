@@ -4,12 +4,21 @@
   "version": "1.0",
   "description": "Extensión para filtrar campañas por cliente, estado y buscador.",
   "permissions": [
-    "storage"
+    "storage",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://mantenedornuevo.movizzon.com/*",
+    "https://mantenedor.movizzon.com/*"
   ],
   "icons": {
     "16": "logo.png",
     "48": "logo.png",
     "128": "logo.png"
+  },
+  "background": {
+    "service_worker": "background.js"
   },
   "action": {
     "default_popup": "popup.html",
@@ -21,7 +30,10 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://mantenedornuevo.movizzon.com/appMonitors"],
+      "matches": [
+        "https://mantenedornuevo.movizzon.com/appMonitors*",
+        "https://mantenedor.movizzon.com/appMonitors*"
+      ],
       "js": ["content.js"],
       "css": ["styles.css"]
     }

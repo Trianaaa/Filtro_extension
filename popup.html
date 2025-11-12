@@ -1,21 +1,41 @@
 <!DOCTYPE html>
 <html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <title>Control Extensión</title>
-  <link rel="stylesheet" href="popup.css">
-</head>
-<body>
-  <div class="popup-container">
-    <h1>⚡ Filtro Campañas</h1>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Filtro de Campañas</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body data-state="active">
+    <div class="popup">
+      <header class="popup__header">
+        <div class="popup__identity">
+          <span class="popup__badge">Extensión</span>
+          <h1 class="popup__title">Filtro de Campañas</h1>
+          <p class="popup__subtitle">Control rápido del panel lateral inteligente.</p>
+        </div>
+        <span id="statusChip" class="popup__chip popup__chip--active">Activa</span>
+      </header>
 
-    <label class="switch">
-      <input type="checkbox" id="toggleExtension">
-      <span class="slider"></span>
-    </label>
-    <p id="statusText">Extensión activa</p>
-  </div>
+      <section class="popup__card">
+        <div class="popup__switch">
+          <label class="switch" aria-label="Activar o desactivar la extensión">
+            <input type="checkbox" id="toggleExtension" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <p id="statusText" class="popup__description">Extensión activa</p>
+        <p id="statusHint" class="popup__hint">
+          La lupa flotante te permite volver a abrir el panel en el sitio.
+        </p>
+      </section>
 
-  <script src="popup.js"></script>
-</body>
+      <footer class="popup__footer">
+        <button id="openMonitor" type="button" class="popup__button popup__button--primary">
+          Abrir Monitoreos
+        </button>
+      </footer>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
 </html>
