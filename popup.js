@@ -1,8 +1,6 @@
 document.addEventListener("DOMContentLoaded", () => {
   const toggle = document.getElementById("toggleExtension");
   const statusText = document.getElementById("statusText");
-  const statusHint = document.getElementById("statusHint");
-  const statusChip = document.getElementById("statusChip");
   const openMonitor = document.getElementById("openMonitor");
   const body = document.body;
 
@@ -11,31 +9,12 @@ document.addEventListener("DOMContentLoaded", () => {
   function applyState(active) {
     toggle.checked = active;
     body.dataset.state = active ? "active" : "inactive";
-
-    statusText.textContent = active
-      ? "El panel lateral está activo."
-      : "La extensión está en pausa.";
-
-    statusHint.textContent = active
-      ? "La lupa flotante te permite volver a abrir el panel en el sitio."
-      : "Enciende la extensión para volver a ver el panel de filtro en el sitio.";
-
-    // Actualizar el chip con el icono y texto
-    if (active) {
-      statusChip.innerHTML = `<span><i class="ti ti-check"></i> Activa</span>`;
-      statusChip.classList.add("popup__chip--active");
-      statusChip.classList.remove("popup__chip--inactive");
-    } else {
-      statusChip.innerHTML = `<span>Pausada</span>`;
-      statusChip.classList.remove("popup__chip--active");
-      statusChip.classList.add("popup__chip--inactive");
-    }
+    statusText.textContent = active ? "Activa" : "Pausada";
   }
 
   function setLoading(loading) {
     isUpdating = loading;
     toggle.disabled = loading;
-    statusChip.classList.toggle("is-loading", loading);
   }
 
   chrome.storage.local.get("isActive", (data) => {
@@ -54,7 +33,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (hasError) {
         applyState(!newValue);
-        statusHint.textContent = "No pudimos actualizar el estado. Intenta nuevamente.";
       } else {
         chrome.storage.local.set({ isActive: newValue });
         applyState(newValue);

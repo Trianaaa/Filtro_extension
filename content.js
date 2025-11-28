@@ -1,4 +1,10 @@
 (function () {
+  // Protección contra ejecución múltiple del script
+  if (window.__filtroCampañasLoaded) {
+    return;
+  }
+  window.__filtroCampañasLoaded = true;
+  
   const PANEL_ID = "menuFiltroCampañas";
   const OPEN_BUTTON_ID = "btnAbrirFiltro";
   const DETAIL_PATTERNS = ["/phonesApp", "/macros/"];
@@ -12,7 +18,6 @@
   const SEVERITIES = [
     { key: "red", label: "Crítico", accent: "rojo" },
     { key: "orange", label: "Alerta", accent: "naranja" },
-    { key: "green", label: "OK", accent: "verde" },
     { key: "none", label: "Sin dato", accent: "gris" },
   ];
 
@@ -34,6 +39,7 @@
     debounceTimer: null,
     globalListenersReady: false,
     isApplyingFilters: false, // Flag para evitar bucles infinitos
+    openStateRestored: false, // Flag para evitar restaurar el estado múltiples veces
   };
 
   function init() {
@@ -49,6 +55,9 @@
   }
 
   function activate() {
+    // Evitar activar múltiples veces si ya está activo y montado
+    if (state.isActive && state.isMounted) return;
+    
     state.isActive = true;
     ensureOpenButton();
     ensurePanel();
@@ -71,7 +80,26 @@
   }
 
   function ensureOpenButton() {
+    // Verificar si el botón ya existe en el DOM (por si se inyectó el script múltiples veces)
+    let existingBtn = document.getElementById(OPEN_BUTTON_ID);
+    if (existingBtn) {
+      // Si existe en el DOM pero no en el estado, actualizar el estado
+      if (!state.openButton) {
+        state.openButton = existingBtn;
+        // Asegurarse de que tiene el listener
+        existingBtn.addEventListener("click", openPanel);
+      }
+      return;
+    }
+    
+    // Si ya está en el estado pero no en el DOM, limpiar el estado
+    if (state.openButton && !document.body.contains(state.openButton)) {
+      state.openButton = null;
+    }
+    
+    // Si ya existe en el estado, no crear otro
     if (state.openButton) return;
+    
     const btn = document.createElement("button");
     btn.id = OPEN_BUTTON_ID;
     btn.type = "button";
@@ -95,8 +123,45 @@
   }
 
   function ensurePanel() {
+    // Verificar si el panel ya existe en el DOM (por si se inyectó el script múltiples veces)
+    let existingPanel = document.getElementById(PANEL_ID);
+    if (existingPanel) {
+      // Si existe en el DOM pero no en el estado, actualizar el estado
+      if (!state.panel) {
+        state.panel = existingPanel;
+        state.isMounted = true;
+        cacheControls();
+        buildSeverityChips();
+        attachControlListeners();
+        restoreState();
+        if (!state.openStateRestored) {
+          restoreOpenState();
+          state.openStateRestored = true;
+        }
+      } else {
+        // Solo restaurar el estado si no se ha restaurado antes
+        if (!state.openStateRestored) {
+          restoreOpenState();
+          state.openStateRestored = true;
+        }
+      }
+      return;
+    }
+    
+    // Si ya está en el estado pero no en el DOM, limpiar el estado
+    if (state.panel && !document.body.contains(state.panel)) {
+      state.panel = null;
+      state.isMounted = false;
+      state.openStateRestored = false;
+    }
+    
+    // Si ya existe en el estado, no crear otro
     if (state.panel) {
-      restoreOpenState();
+      // Solo restaurar el estado si no se ha restaurado antes
+      if (!state.openStateRestored) {
+        restoreOpenState();
+        state.openStateRestored = true;
+      }
       return;
     }
 
@@ -109,7 +174,6 @@
       <div class="mfc-panel__wrapper">
         <header class="mfc-panel__header">
           <div class="mfc-panel__titles">
-            <span class="mfc-panel__eyebrow">Monitor de campañas</span>
             <h3 class="mfc-panel__title">Filtro de Campañas</h3>
           </div>
           <button type="button" id="mfcCloseButton" class="mfc-icon-button mfc-close" aria-label="Cerrar panel"></button>
@@ -170,7 +234,7 @@
           </div>
         </section>
         <footer class="mfc-footer">
-          <button type="button" id="mfcResetButton" class="mfc-button"><span>Limpiar filtros</span></button>
+          <button type="button" id="mfcResetButton" class="mfc-button">Limpiar filtros</button>
         </footer>
       </div>
     `;
@@ -192,14 +256,22 @@
           buildSeverityChips();
           attachControlListeners();
           restoreState();
-          restoreOpenState();
+          // Solo restaurar el estado de apertura una vez
+          if (!state.openStateRestored) {
+            restoreOpenState();
+            state.openStateRestored = true;
+          }
         }
       }, 100);
     } else {
       buildSeverityChips();
       attachControlListeners();
       restoreState();
-      restoreOpenState();
+      // Solo restaurar el estado de apertura una vez
+      if (!state.openStateRestored) {
+        restoreOpenState();
+        state.openStateRestored = true;
+      }
     }
   }
 
@@ -537,22 +609,17 @@
 
         const matchesCampaign = !filters.searchCampaign || campaignName.includes(filters.searchCampaign);
 
-        let visibleRows = 0;
+        // Primero, evaluar todas las filas para ver si alguna coincide con el filtro
+        let hasMatchingRow = false;
+        const rowData = [];
 
         rows.forEach((row) => {
           if (!row) return;
           
           const { color, caido, ultimoEventoMin, metricCell, lastEventCell } = updateRowMetadata(row);
 
-          const tds = row.querySelectorAll("td");
-          tds.forEach((td) => {
-            if (td) {
-              td.classList.remove("resaltar-rojo", "resaltar-naranja", "resaltar-caido", "resaltar-verde");
-            }
-          });
-
           if (!matchesCampaign) {
-            row.style.display = "none";
+            rowData.push({ row, matches: false, color, caido, metricCell, lastEventCell });
             return;
           }
 
@@ -580,7 +647,7 @@
           const matchesIMEI =
             !filters.imeiKey || rowMatchesIMEI(row, filters.imeiKey);
 
-          const showRow =
+          const matches =
             matchesSeverity &&
             matchesCaidos &&
             matchesLastEvent &&
@@ -588,32 +655,54 @@
             matchesKeyword &&
             matchesIMEI;
 
-          if (showRow) {
+          if (matches) {
+            hasMatchingRow = true;
+          }
+
+          rowData.push({ row, matches, color, caido, metricCell, lastEventCell });
+        });
+
+        // Si alguna fila coincide, mostrar TODA la campaña; si no, ocultarla completamente
+        const showCampaign = matchesCampaign && hasMatchingRow;
+        let visibleRows = 0;
+
+        rowData.forEach(({ row, matches, color, caido, metricCell, lastEventCell }) => {
+          if (!row) return;
+
+          const tds = row.querySelectorAll("td");
+          tds.forEach((td) => {
+            if (td) {
+              td.classList.remove("resaltar-rojo", "resaltar-naranja", "resaltar-caido");
+            }
+          });
+
+          if (showCampaign) {
+            // Mostrar todas las filas de la campaña
             row.style.display = "";
             visibleRows += 1;
             stats.rowsVisible += 1;
-            if (color === "red") stats.criticalVisible += 1;
-            if (caido) stats.fallenVisible += 1;
+            
+            // Aplicar resaltados solo a las filas que coinciden con el filtro
+            if (matches) {
+              if (color === "red") stats.criticalVisible += 1;
+              if (caido) stats.fallenVisible += 1;
 
-            // Aplicar resaltados directamente a las celdas
-            if (color === "red" && metricCell) {
-              metricCell.classList.add("resaltar-rojo");
-            }
-            if (color === "orange" && metricCell) {
-              metricCell.classList.add("resaltar-naranja");
-            }
-            if (color === "green" && metricCell) {
-              metricCell.classList.add("resaltar-verde");
-            }
-            if (caido && lastEventCell) {
-              lastEventCell.classList.add("resaltar-caido");
+              // Aplicar resaltados directamente a las celdas
+              if (color === "red" && metricCell) {
+                metricCell.classList.add("resaltar-rojo");
+              }
+              if (color === "orange" && metricCell) {
+                metricCell.classList.add("resaltar-naranja");
+              }
+              if (caido && lastEventCell) {
+                lastEventCell.classList.add("resaltar-caido");
+              }
             }
           } else {
+            // Ocultar todas las filas si la campaña no coincide
             row.style.display = "none";
           }
         });
-
-        const showCampaign = matchesCampaign && visibleRows > 0;
         if (campaignBlock.style) {
           campaignBlock.style.display = showCampaign ? "" : "none";
         }
@@ -724,7 +813,7 @@
         const cls = (status.className || "").toLowerCase();
         if (cls.includes("error")) color = "red";
         else if (cls.includes("warning") || cls.includes("orange")) color = "orange";
-        else if (cls.includes("success")) color = "green";
+        // "success" se trata como "none" (sin dato)
       } else if (metricCell.innerText) {
         const pctMatch = metricCell.innerText.match(/(\d+)\s*%/);
         if (pctMatch) {
@@ -889,15 +978,21 @@
   }
 
   function restoreOpenState() {
+    // Evitar restaurar si ya se restauró o si el panel no existe
+    if (state.openStateRestored || !state.panel) return;
+    
     let stored = null;
     try {
       stored = sessionStorage.getItem(STORAGE_KEYS.panelOpen);
     } catch {
       stored = null;
     }
-    if (stored === "1" || stored === null) {
+    
+    // Solo cambiar el estado si es necesario
+    const shouldBeOpen = stored === "1" || stored === null;
+    if (shouldBeOpen && !state.panelOpen) {
       openPanel();
-    } else {
+    } else if (!shouldBeOpen && state.panelOpen) {
       closePanel();
     }
   }
@@ -943,6 +1038,7 @@
     state.severityButtons.clear();
     state.isMounted = false;
     state.panelOpen = false;
+    state.openStateRestored = false; // Resetear el flag cuando se destruye el panel
   }
 
   function registerGlobalListeners() {
